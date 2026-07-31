@@ -1,0 +1,170 @@
+Not at all. Here's the definitive version — matched to the PNC repo, named for your automation, with every file and folder explained and justified in one place.
+
+Role: **`akamai_ss_deploy`** (fits your `akamai_ss_*` self-service family). Project: **SSP Automation**.
+
+## Directory tree
+
+```
+SSP_Automation/                                        ← repo root
+│
+├── ansible.cfg
+├── .ansible-lint
+│
+├── collections/
+│   └── requirements.yml
+│
+├── inventories/
+│   └── akamai/
+│       ├── prod/
+│       │   └── aki_prod.yml
+│       └── qa/
+│           └── aki_qa.yml
+│
+├── playbooks/
+│   └── akamai_self_service/
+│       └── create_deployment_activation.yml
+│
+└── roles/
+    └── akamai_ss_deploy/
+        ├── README.md
+        ├── defaults/
+        │   └── main.yml
+        ├── meta/
+        │   ├── main.yml
+        │   └── argument_specs.yml
+        └── tasks/
+            ├── main.yml
+            ├── 02_local_validation.yml
+            ├── 03_servicenow_validation.yml
+            ├── 04_jira_validation.yml
+            ├── 06_akamai_metadata.yml
+            ├── 07_version_comparison.yml
+            ├── 08_comparison_report.yml
+            ├── 10_approval_gate.yml
+            ├── 11_deploy_execute.yml
+            ├── 13_servicenow_notes.yml
+            ├── 15_reporting.yml
+            └── rollback.yml
+```
+
+## Repo-level files & folders
+
+| Path | What it is | Purpose / why it exists | Loaded / used how |
+|---|---|---|---|
+| `ansible.cfg` | Ansible configuration | Points Ansible at `roles/`, the `collections/` path, and inventory; pins behavior for your ansible-core version (your repo notes config shifted between 2.16–2.19). **Without it, `- akamai_ss_deploy` and `local.akamai` won't resolve.** | Auto-read from the directory Ansible runs in |
+| `.ansible-lint` | Lint config (`profile: production`) | Your repo gates merges on it. Production profile = FQCN everywhere, `name:` on every task, no bare vars. The role is written to pass it. | Run by `ansible-lint` in CI/pre-commit |
+| `collections/requirements.yml` | Collection dependency list | Declares `community.general` (and documents that `local.akamai` is vendored in `collections/ansible_collections/local/akamai`). **Reproducible installs** — CI runs `ansible-galaxy collection install -r` from this. | `ansible-galaxy … -r` |
+| `inventories/akamai/prod/aki_prod.yml` | Prod inventory | Defines host `PROD` with the **vaulted `akamai.auth`** block (client_secret/host/access_token/client_token) + `akamai.environment.name: PROD` + smtp/venafi. **Credentials live here, per-env, encrypted — never in the role.** | `-i` at runtime |
+| `inventories/akamai/qa/aki_qa.yml` | QA inventory | Same shape for host `QA`. Lets the identical role run against non-prod by swapping inventory only. | `-i` at runtime |
+
+## Playbook
+
+| Path | What it is | Purpose / why | Loaded / used how |
+|---|---|---|---|
+| `playbooks/akamai_self_service/create_deployment_activation.yml` | The **entrypoint** | The single place the role is called. Targets the chosen inventory host (`PROD`/`QA`) and runs `akamai_ss_deploy`. **The AAP job template runs this file; the AAP Survey feeds its variables.** Lives under `akamai_self_service/` to sit with the rest of the self-service entrypoints. | `ansible-playbook …` (by AAP or manually) |
+
+```yaml
+---
+- name: SSP Automation - Akamai self-service deployment
+  hosts: "{{ target_env | default('PROD') }}"   # must match an inventory host: PROD | QA
+  gather_facts: false
+  roles:
+    - akamai_ss_deploy
+```
+
+## Role: standard folders
+
+| Folder | What Ansible does with it | Purpose / why | Precedence note |
+|---|---|---|---|
+| `roles/akamai_ss_deploy/tasks/` | Auto-runs `tasks/main.yml` when the role is invoked | The actual work. `main.yml` is the entrypoint; the numbered files are `include_tasks`'d from it in flowchart order. | — |
+| `roles/akamai_ss_deploy/defaults/` | Auto-loads `defaults/main.yml` | Default variable values. **Lowest** precedence, so the AAP survey / `-e` / inventory all override cleanly — correct home for tunable inputs. | Lowest |
+| `roles/akamai_ss_deploy/meta/` | Auto-loads metadata & validates inputs | Role metadata + dependency list (`main.yml`) and formal input validation (`argument_specs.yml`). Ansible reads deps before running; lint expects `meta/main.yml`. | — |
+
+## Role: every file
+
+| File | Maps to flowchart | What it does | Why it's a separate file |
+|---|---|---|---|
+| `README.md` | — | What the role does, required vars, how AAP invokes it, the two known caveats. | So the next engineer doesn't reverse-engineer it. |
+| `defaults/main.yml` | inputs | Overridable inputs: `sspa_property_id`, `sspa_requested_version`, `sspa_requestor`, `sspa_snow_change_number`, `sspa_jira_ticket`, `sspa_notify_emails`, derived `sspa_network`, poll timings, `sspa_dry_run`, report/audit paths. | Lowest-precedence vars belong here, not mixed into tasks. |
+| `meta/main.yml` | — | `galaxy_info` + `dependencies: []`. | Required for a well-formed role; lint checks it. |
+| `meta/argument_specs.yml` | Step 1 (intake) | Declares/validates the role's inputs (types, required, choices). | **Fails fast with a clear message on a bad survey value** instead of a mid-run traceback. |
+| `tasks/main.yml` | orchestrator | Runs steps 2→17 inside a `block`; `rescue` routes any failure to `rollback.yml`. Includes every file below. | Single entrypoint; keeps the flow readable and the failure path in one place. |
+| `tasks/02_local_validation.yml` | Step 2 | Format checks: Jira ID pattern, numeric version, prod-requires-CR. | One concern per file → maps 1:1 to a flowchart node, easy to audit. |
+| `tasks/03_servicenow_validation.yml` | Step 3 | CR exists / approved / eligible (REST via `uri`; skips with a TODO if `snow_base_url` unset). | Isolates the ServiceNow dependency. |
+| `tasks/04_jira_validation.yml` | Step 4 | Issue exists / accessible / project valid (skips with TODO if unset). | Isolates the Jira dependency. |
+| `tasks/06_akamai_metadata.yml` | Step 6 | `local.akamai.properties_info` → latest/staging/prod versions; **captures current prod as the rollback point before any change.** | The only Akamai-read step; keeps the collection call and the rollback-capture together. |
+| `tasks/07_version_comparison.yml` | Step 7 | requested vs staging vs prod; guards that requested ≤ latest (automation never creates versions). | Pure decision logic, no side effects — worth isolating. |
+| `tasks/08_comparison_report.yml` | Steps 8–9 | Builds the pre-deploy report artifact and sends it for review. | Separates "produce evidence for humans" from the deploy itself. |
+| `tasks/10_approval_gate.yml` | Step 10 | Enforces the approval decision passed in from the **AAP workflow approval node**; `end_play` on rejection. | Governance boundary made explicit and reviewable. |
+| `tasks/11_deploy_execute.yml` | Steps 11–12 | The branch: requested==staging → straight to PROD; else STAGING→PROD. Uses `local.akamai.property_activation`, which no-ops if already active, previews in check mode, submits otherwise (monitoring is built into the module). | The heart of the automation; keeps the path logic in one obvious place. |
+| `tasks/13_servicenow_notes.yml` | Step 13 | Writes deployment notes (version, triggered-by/on, PASS/FAIL) to the CR. | Isolates the system-of-record update. |
+| `tasks/15_reporting.yml` | Steps 15–17 | Generates the deployment report, sends outcome notification, appends the audit log. (Also re-used by rollback for its report.) | Reusable reporting block, called from both success and rollback paths. |
+| `tasks/rollback.yml` | Steps 18–22 | Redeploys the last-known-stable version via `property_activation`; updates ServiceNow; regenerates the report. Manual-recovery branch if no stable version exists. | First-class recovery path, invoked by the orchestrator's `rescue`. |
+
+## Folders deliberately **omitted** (and why — not shipped as empty dirs)
+
+| Folder | Normally for | Why it's absent here |
+|---|---|---|
+| `vars/` | High-precedence vars that shouldn't be overridden | **Credentials aren't here** — they're in the vaulted inventory `akamai.auth`. Nothing else qualifies, so it'd be empty. |
+| `handlers/` | `notify`-triggered actions (restart-style) | This role polls/reports inline; nothing to defer. |
+| `templates/` / `files/` | Jinja templates / static files to deploy | Reports are built inline via the `copy` module's `content:`; no template or static files. |
+| `library/` / `module_utils/` | Custom modules & helpers | **The key signal.** The Akamai modules live in `local.akamai`; this role only *calls* them → zero custom Python. If you ever want to add `library/` here, that's the cue you're re-implementing a capability that belongs in the collection instead. |
+
+---
+
+Two supporting files worth showing in full, since they're the additions that make this the "best" version rather than just correct:
+
+**`roles/akamai_ss_deploy/meta/argument_specs.yml`**
+```yaml
+---
+argument_specs:
+  main:
+    short_description: SSP Automation Akamai self-service deployment workflow.
+    options:
+      sspa_property_id:
+        type: str
+        required: true
+        description: Target Akamai property (prp_ id).
+      sspa_requested_version:
+        type: str
+        required: true
+        description: Property version to activate (operator pre-creates it).
+      sspa_requestor:
+        type: str
+        required: true
+        description: Requestor email; recorded in reports and ServiceNow.
+      sspa_snow_change_number:
+        type: str
+        required: false
+        description: ServiceNow CR; required when the target network is PRODUCTION.
+      sspa_jira_ticket:
+        type: str
+        required: false
+        description: Jira issue for non-prod tracking (PROJECT-123).
+      sspa_notify_emails:
+        type: list
+        elements: str
+        default: []
+        description: Emails Akamai notifies on activation status change.
+      sspa_dry_run:
+        type: bool
+        default: false
+        description: Run modules in check mode (preview, no activation).
+```
+
+**`roles/akamai_ss_deploy/meta/main.yml`**
+```yaml
+---
+galaxy_info:
+  role_name: akamai_ss_deploy
+  namespace: ssp
+  author: SSP Automation
+  description: Akamai self-service deployment workflow (validate, activate, monitor, roll back).
+  license: internal
+  min_ansible_version: "2.16"
+dependencies: []
+```
+
+The task-file contents themselves (`defaults/main.yml`, `02`–`15`, `rollback.yml`) are exactly what I gave you inline two messages ago — unchanged. The only things this "best" layout adds are `README.md`, `argument_specs.yml`, and making the repo-level dependencies (`ansible.cfg`, `.ansible-lint`, `collections/requirements.yml`, inventories) explicit so the role actually runs where it lives.
+
+Same two caveats, still not buried: validate with `ansible-lint` + `ansible-playbook --syntax-check` in your venv (I can't — `local.akamai` isn't installable in my sandbox), and confirm `properties_info`'s real return keys against its `RETURN` block before trusting `06_akamai_metadata.yml`.
