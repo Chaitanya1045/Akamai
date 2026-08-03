@@ -1,0 +1,85 @@
+SSP_Automation/                          ← existing PNC repo root
+│
+├── ansible.cfg                          roles_path MUST include the nested dir (see ⚠ below)
+├── .ansible-lint                        profile: production
+├── .gitignore                           *.retry, .edgerc, artifacts/
+├── README.md
+│
+├── collections/
+│   └── requirements.yml                 community.general, servicenow.itsm
+│                                        (local.akamai is vendored — document here)
+│
+├── inventories/
+│   └── akamai/
+│       ├── qa/
+│       │   └── aki_qa.yml               host QA   → environment.name: STAGING
+│       └── prod/
+│           └── aki_prod.yml             host PROD → environment.name: PRODUCTION
+│                                        ← network is DERIVED HERE. Never a survey field.
+│
+│
+├── roles/
+│   └── AkamaiVersionConfigPush/         ═══ MAIN FOLDER 1 — ROLE SIDE ═══
+│       └── akamai/                      ← role name
+│           │
+│           ├── README.md                role purpose, inputs, invocation, caveats
+│           │
+│           ├── defaults/
+│           │   └── main.yml             overridable inputs (lowest precedence)
+│           │
+│           ├── vars/
+│           │   └── main.yml             constants that must NOT be overridden
+│           │                            (poll 10s, max 360 checks, 60 min, PAPI paths)
+│           │
+│           ├── meta/
+│           │   ├── main.yml             galaxy_info, dependencies: []
+│           │   └── argument_specs.yml   type/required/choices validation at role entry
+│           │
+│           ├── filter_plugins/
+│           │   └── ruletree.py          rule-tree diff ONLY — keep only if local.akamai
+│           │                            has no diff module. Verify first.
+│           │
+│           ├── templates/
+│           │   ├── predeploy_report.j2       step 8
+│           │   ├── deployment_report.j2      step 15
+│           │   └── notification.j2           step 16
+│           │
+│           └── tasks/
+│               ├── main.yml             router — dispatches on akamai_stage
+│               │
+│               ├── prechecks.yml        ── entry point for playbook 01 ──
+│               │   ├── 02_local_validation.yml
+│               │   ├── 03_snow_validation.yml
+│               │   ├── 04_jira_validation.yml
+│               │   ├── 05_approver_routing.yml
+│               │   ├── 06_akamai_metadata.yml
+│               │   ├── 07_version_comparison.yml
+│               │   ├── 08_predeploy_report.yml
+│               │   └── 09_send_report.yml
+│               │
+│               ├── deploy.yml           ── entry point for playbook 02 ──
+│               │   ├── 11_determine_path.yml
+│               │   ├── 11a_activate.yml       (included 1× or 2× — see below)
+│               │   ├── 12_monitor.yml
+│               │   ├── 13_snow_notes.yml
+│               │   ├── 14_post_validation.yml
+│               │   ├── 15_reporting.yml
+│               │   ├── 16_notifications.yml
+│               │   └── 17_audit_log.yml
+│               │
+│               └── rollback.yml         ── entry point for playbook 03 ──
+│                   ├── 20_identify_stable.yml
+│                   ├── 21_redeploy_stable.yml
+│                   └── 22_validate_and_close.yml
+│
+│
+└── playbooks/
+    └── AkamaiVersionConfigPush/         ═══ MAIN FOLDER 2 — PLAYBOOK SIDE ═══
+        └── akamai/                      ← akamai namespace
+            │
+            ├── group_vars/
+            │   └── all.yml              non-secret shared vars for these playbooks
+            │
+            ├── 01_akamai_prechecks.yml      ← STEPS 1–9   (AAP Job Template #1)
+            ├── 02_akamai_deploy.yml         ← STEPS 11–17 (AAP Job Template #2)
+            └── 03_akamai_rollback.yml       ← STEPS 18–22 (JT #3, also manual entry)
