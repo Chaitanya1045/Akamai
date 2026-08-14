@@ -1,0 +1,76 @@
+# =============================================================================
+# List verification
+# =============================================================================
+
+- name: "Report Storage | Verify list capability"
+  when:
+    - not ansible_check_mode
+    - report_storage_verify_io | bool
+  block:
+
+    - name: "Report Storage | Locate verification file"
+      ansible.builtin.find:
+        paths: "{{ report_storage_root }}"
+        patterns:
+          - "{{ report_storage_probe_filename }}"
+        file_type: file
+        recurse: false
+        hidden: true
+      register: report_storage_probe_list
+
+
+    - name: "Report Storage | Validate list result"
+      ansible.builtin.assert:
+        that:
+          - report_storage_probe_list.matched | int == 1
+        fail_msg: >-
+          Automation could not locate the verification artifact
+          written under /tmp.
+
+
+  rescue:
+
+    - name: "Report Storage | Remove verification file after list failure"
+      ansible.builtin.file:
+        path: "{{ report_storage_probe_path }}"
+        state: absent
+      failed_when: false
+
+
+    - name: "Report Storage | Publish list failure"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.list }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "infrastructure"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.list_failed }}
+
+        common_logging_error_message: >-
+          Automation could not list the temporary report artifact
+          under /tmp.
+
+        common_logging_error_recommended_action: >-
+          Verify /tmp access permissions inside the
+          Execution Environment.
+
+        common_logging_error_version_info: {}
