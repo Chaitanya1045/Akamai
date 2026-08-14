@@ -1,0 +1,4 @@
+* Created the **playbook skeleton and role-based configuration model** for Akamai Version Push.
+* Added structured **defaults/vars** for inputs, environment, credential references, and feature flags.
+* Defined execution stages: **validate → approve → deploy → report → rollback** with dry-run support.
+* Added **fail-fast configuration validation** and placeholders for Akamai, ServiceNow, and Jira integrations.
