@@ -1,0 +1,20 @@
+**Subject: Weekly Update – Akamai Version Push Automation | 10 Aug – 14 Aug 2026**
+
+Hi [Manager Name],
+
+Sharing a quick update for **10 Aug – 14 Aug 2026**:
+
+**1. What moved last week**
+Completed the playbook skeleton/configuration model and implemented the temporary report-storage flow under `/tmp`. Validated the storage flow in AAP for write/read/list access, naming convention, permissions, and standardized error handling through `common_logging`.
+
+**2. What I’m prioritising this week**
+Continue development of the next Akamai Version Push user stories and integrate the completed components into the overall automation workflow.
+
+**3. What I need from you/team**
+Alignment on any upcoming dependencies or integration decisions that may impact the workflow design.
+
+**4. One thing to be aware of**
+AAP Execution Environments are ephemeral, so locally generated reports cannot be retained after the job ends. Reports will be temporarily stored under `/tmp` and delivered through the separate email workflow.
+
+Thanks,
+Chaitanya
