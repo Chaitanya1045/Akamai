@@ -1,0 +1,63 @@
+## SSPA-11: ServiceNow Change Request Validation for Akamai Automation
+
+Adds read-only ServiceNow Change Request validation for the Akamai Version Push workflow. The implementation supports mock and live modes and validates all required ServiceNow business gates before deployment can continue.
+
+### What's New
+- Added read-only ServiceNow CHG validation.
+- Added mock and live execution modes.
+- Added CHG input-format and fail-fast validation.
+- Added ServiceNow authentication validation using AAP-injected credentials.
+- Added live CHG retrieval using `servicenow.itsm.change_request_info`.
+- Added validation that the returned CHG matches the requested CHG.
+- Added mandatory `Implement` state validation.
+- Added mandatory `Approved` approval validation.
+- Added planned implementation-window validation.
+- Added retry handling for transient API/timeout failures.
+- Published successful validation results as AAP artifacts.
+- Integrated failures with the existing `common_logging` framework.
+
+### Credential Handling
+AAP Custom Credential injects:
+- `snow_host`
+- `snow_username`
+- `snow_password`
+
+No ServiceNow credentials are stored in source code, defaults, vars, or survey inputs.
+
+### Error Codes
+- `SERVICENOW_CONFIG_INVALID` — Invalid configuration or CHG format.
+- `SERVICENOW_AUTH_FAILED` — Credential/authentication failure.
+- `SERVICENOW_API_FAILED` — ServiceNow API retrieval failure.
+- `SERVICENOW_API_TIMEOUT` — ServiceNow request timeout.
+- `SERVICENOW_RATE_LIMITED` — ServiceNow rate limit.
+- `SERVICENOW_CHANGE_NOT_FOUND` — CHG does not exist.
+- `SERVICENOW_RESPONSE_INVALID` — Invalid or ambiguous ServiceNow response.
+- `SERVICENOW_STATUS_INVALID` — State/approval validation failed.
+- `SERVICENOW_WINDOW_MISSING` — Planned implementation window missing.
+- `SERVICENOW_WINDOW_INVALID` — Planned implementation window invalid.
+- `SERVICENOW_OUTSIDE_WINDOW` — Execution outside approved window.
+
+### Test Cases
+- TC-01 — Valid change request → Success.
+- TC-02 — Invalid CHG format → `SERVICENOW_CONFIG_INVALID`.
+- TC-03 — Invalid mock scenario → `SERVICENOW_CONFIG_INVALID`.
+- TC-04 — Authentication failure → `SERVICENOW_AUTH_FAILED`.
+- TC-05 — Change not found → `SERVICENOW_CHANGE_NOT_FOUND`.
+- TC-06 — Change not in Implement state → `SERVICENOW_STATUS_INVALID`.
+- TC-07 — Change not Approved → `SERVICENOW_STATUS_INVALID`.
+- TC-08 — Implementation window missing → `SERVICENOW_WINDOW_MISSING`.
+- TC-09 — Execution before approved window → `SERVICENOW_OUTSIDE_WINDOW`.
+- TC-10 — Execution after approved window → `SERVICENOW_OUTSIDE_WINDOW`.
+- TC-11 — Timeout/retry exhaustion → `SERVICENOW_API_TIMEOUT`.
+- TC-12 — AAP credential not injected → `SERVICENOW_AUTH_FAILED`.
+- TC-13 — Valid live ServiceNow CHG → Success.
+- TC-14 — Live CHG not found → `SERVICENOW_CHANGE_NOT_FOUND`.
+- TC-15 — Multiple matching records → `SERVICENOW_RESPONSE_INVALID`.
+
+### Notes
+- ServiceNow validation is read-only.
+- Mock mode is retained for testing without live ServiceNow dependency.
+- Live mode uses AAP Custom Credential injection for hostname, username and password.
+- Both `Implement` state and `Approved` approval are mandatory.
+- Execution is permitted only inside the approved ServiceNow implementation window.
+- Retry logic handles transient ServiceNow API and timeout failures.
