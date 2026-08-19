@@ -1,0 +1,47 @@
+## SSPA-7: Temporary Report Storage Validation for Akamai Automation
+
+Adds temporary report-storage validation inside the AAP Execution Environment using `/tmp`. The implementation validates storage accessibility, secure permissions, report naming, and actual write/read/list capability for downstream report processing.
+
+### What's New
+- Added temporary report storage under `/tmp`.
+- Added `/tmp` accessibility validation.
+- Added write, read and list verification using a temporary probe file.
+- Added secure file permissions with `0600` default and optional `0640` group access.
+- Added `{timestamp}_{version}_{status}.txt` report naming convention.
+- Published generated report filename/path as AAP artifacts.
+- Integrated failures with the existing `common_logging` framework.
+- Added automatic probe cleanup.
+- Fixed hidden probe discovery using `hidden: true`.
+- Added AAP Check Mode support without performing actual probe I/O.
+
+### Error Codes
+- `REPORT_STORAGE_CONFIG_INVALID` — Invalid storage configuration.
+- `REPORT_ACCESS_GROUP_INVALID` — Configured OS group unavailable.
+- `REPORT_STORAGE_UNAVAILABLE` — Temporary storage unavailable.
+- `REPORT_STORAGE_WRITE_FAILED` — Write verification failed.
+- `REPORT_STORAGE_READ_FAILED` — Read verification failed.
+- `REPORT_STORAGE_LIST_FAILED` — List verification failed.
+- `REPORT_STORAGE_DRY_RUN_FAILED` — Check-mode validation failed.
+- `REPORT_NAME_INVALID` — Invalid report naming input.
+
+### Test Cases
+- TC-01 — Valid storage and report naming → Success.
+- TC-02 — Storage-only validation → Success.
+- TC-03 — I/O verification disabled → Success.
+- TC-04 — Invalid report version → `REPORT_NAME_INVALID`.
+- TC-05 — Unsafe file permission → `REPORT_STORAGE_CONFIG_INVALID`.
+- TC-06 — Invalid access group → `REPORT_ACCESS_GROUP_INVALID`.
+- TC-07 — Write verification failure → `REPORT_STORAGE_WRITE_FAILED`.
+- TC-08 — Read verification failure → `REPORT_STORAGE_READ_FAILED`.
+- TC-09 — List verification failure → `REPORT_STORAGE_LIST_FAILED`.
+- TC-10 — Hidden probe listing → Success.
+- TC-11 — AAP Check Mode → Success.
+- TC-12 — Group-readable mode → Success with `0640`.
+- TC-13 — Default private mode → Success with `0600`.
+- TC-14 — Probe cleanup → Success.
+
+### Notes
+- `/tmp` is treated as temporary/ephemeral storage inside the AAP Execution Environment.
+- Long-term retention is not implemented in the current EE-based design.
+- Report generation and email delivery are handled separately.
+- Runtime AAP testing identified the hidden-file list issue, which was fixed using `hidden: true`.
