@@ -1,0 +1,23 @@
+### SSPA-5 – Playbook Skeleton & Configuration Model
+
+* Created the base `akamai_version_push` role/playbook structure.
+* Defined reusable configuration through `defaults` and `vars`.
+* Established `validate → approve → deploy → report → rollback` execution stages.
+* Added fail-fast validation for mandatory configuration.
+* Added placeholders for Akamai, ServiceNow and Jira integrations.
+* Kept credentials out of source code and aligned them for runtime injection.
+* Added dry-run/check-mode support without external API calls.
+* Validated the base structure in AAP for future story integration.
+
+### SSPA-7 – Temporary Report Storage
+
+* Implemented temporary report storage directly under `/tmp` in the AAP EE.
+* Added storage availability and configuration validation.
+* Implemented actual write, read and list verification using a temporary probe file.
+* Added secure file permissions: `0600` by default and optional `0640` group access.
+* Added `{timestamp}_{version}_{status}.txt` report naming convention.
+* Published the generated report filename/path as AAP artifacts for downstream tasks.
+* Integrated failures with the existing `common_logging` framework.
+* Identified and fixed hidden probe-file listing issue using `hidden: true`.
+* Added probe cleanup after successful/failed validation.
+* Tested happy path, Check Mode, permissions, invalid inputs, group access and failure scenarios in AAP.
