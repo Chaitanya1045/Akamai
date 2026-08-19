@@ -1,0 +1,1242 @@
+---
+# =============================================================================
+# Temporary Report Storage
+#
+# Purpose:
+#   Validate temporary report storage inside the active AAP
+#   Execution Environment.
+#
+# Storage:
+#   /tmp
+#
+# Responsibilities:
+#   - Resolve execution/logging context
+#   - Validate report-storage configuration
+#   - Validate optional shared-access group
+#   - Verify /tmp availability
+#   - Verify write capability
+#   - Verify read capability
+#   - Verify list capability
+#   - Verify secure file permissions
+#   - Remove temporary verification probe
+#   - Validate report naming
+#   - Publish report path for downstream tasks
+#   - Integrate failures/success with common_logging
+#
+# This task does NOT:
+#   - provide persistent storage
+#   - implement retention
+#   - generate final report content
+#   - send email
+# =============================================================================
+
+
+# =============================================================================
+# Runtime Timestamp
+# =============================================================================
+
+- name: "Report Storage | Resolve runtime timestamp"
+  ansible.builtin.set_fact:
+    report_storage_runtime_timestamp: >-
+      {{
+        now(
+          utc=true,
+          fmt='%Y%m%dT%H%M%SZ'
+        )
+      }}
+
+
+# =============================================================================
+# Logging Correlation Context
+# =============================================================================
+
+- name: "Report Storage | Resolve logging correlation"
+  ansible.builtin.set_fact:
+
+    report_storage_log_request_id: >-
+      {{
+        (
+          common_logging_request_id
+          | default('', true)
+          | string
+          | trim
+        )
+        if
+        (
+          common_logging_request_id
+          | default('', true)
+          | string
+          | trim
+          | length > 0
+        )
+        else
+        (
+          'REPORT-'
+          ~
+          report_storage_runtime_timestamp
+        )
+      }}
+
+    report_storage_log_execution_id: >-
+      {{
+        common_logging_execution_id
+        | default(
+            awx_job_id
+            | default(
+                report_storage_runtime_timestamp,
+                true
+              ),
+            true
+          )
+        | string
+      }}
+
+    report_storage_log_actor: >-
+      {{
+        common_logging_actor
+        | default(
+            awx_user_email
+            | default(
+                'automation',
+                true
+              ),
+            true
+          )
+        | string
+      }}
+
+    report_storage_log_triggered_by: >-
+      {{
+        common_logging_triggered_by
+        | default(
+            awx_user_email
+            | default(
+                'automation',
+                true
+              ),
+            true
+          )
+        | string
+      }}
+
+
+# =============================================================================
+# Resolve Logging Environment
+#
+# Environment is not mandatory for SSPA-7.
+#
+# Resolution:
+#   common_logging_environment
+#       ↓
+#   akamai.environment.name
+#       ↓
+#   local
+# =============================================================================
+
+- name: "Report Storage | Resolve requested logging environment"
+  ansible.builtin.set_fact:
+    report_storage_requested_environment: >-
+      {{
+        common_logging_environment
+        | default(
+            (
+              akamai
+              | default({})
+            )
+            .get(
+              'environment',
+              {}
+            )
+            .get(
+              'name',
+              'local'
+            ),
+            true
+          )
+        | string
+        | trim
+        | lower
+      }}
+
+
+- name: "Report Storage | Resolve safe logging environment"
+  ansible.builtin.set_fact:
+    report_storage_log_environment: >-
+      {{
+        report_storage_requested_environment
+        if
+        report_storage_requested_environment
+        in [
+          'dev',
+          'rnd',
+          'qa',
+          'prod',
+          'test',
+          'local'
+        ]
+        else
+        'local'
+      }}
+
+
+# =============================================================================
+# Effective File Permissions
+#
+# No access group:
+#   0600
+#
+# Access group configured:
+#   0640
+# =============================================================================
+
+- name: "Report Storage | Resolve effective file permissions"
+  ansible.builtin.set_fact:
+    report_storage_effective_file_mode: >-
+      {{
+        report_storage_group_file_mode
+        if
+        (
+          report_storage_access_group
+          | default('')
+          | string
+          | trim
+          | length > 0
+        )
+        else
+        report_storage_private_file_mode
+      }}
+
+
+# =============================================================================
+# Configuration Validation
+# =============================================================================
+
+- name: "Report Storage | Validate configuration"
+  block:
+
+    - name: "Report Storage | Validate temporary storage root"
+      ansible.builtin.assert:
+        that:
+
+          - report_storage_root is defined
+
+          - report_storage_root == '/tmp'
+
+        fail_msg: >-
+          Temporary report storage must resolve to /tmp.
+
+        quiet: true
+
+
+    - name: "Report Storage | Validate file permission configuration"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            report_storage_private_file_mode
+            is match(
+              '^[0-7]{4}$'
+            )
+
+          - >-
+            report_storage_group_file_mode
+            is match(
+              '^[0-7]{4}$'
+            )
+
+          - report_storage_private_file_mode[-1] == '0'
+
+          - report_storage_group_file_mode[-1] == '0'
+
+        fail_msg: >-
+          Report file modes must be valid four-digit octal
+          values and must not grant permissions to other users.
+
+        quiet: true
+
+
+    - name: "Report Storage | Validate optional access group format"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            (
+              report_storage_access_group
+              | default('')
+              | string
+              | trim
+              | length == 0
+            )
+            or
+            (
+              report_storage_access_group
+              is match(
+                '^[A-Za-z_][A-Za-z0-9_.-]{0,63}$'
+              )
+            )
+
+        fail_msg: >-
+          report_storage_access_group must be empty
+          or contain a valid operating-system group name.
+
+        quiet: true
+
+
+    - name: "Report Storage | Validate filename contract"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            (
+              report_storage_runtime_timestamp
+              ~
+              '_1_success.txt'
+            )
+            is match(
+              report_storage_filename_regex
+            )
+
+        fail_msg: >-
+          Report filename contract is invalid.
+          Expected format is timestamp_version_status.txt.
+
+        quiet: true
+
+
+  rescue:
+
+    - name: "Report Storage | Stop on invalid configuration"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.validation }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "validation"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.config_invalid }}
+
+        common_logging_error_message: >-
+          Temporary report storage configuration
+          validation failed.
+
+        common_logging_error_recommended_action: >-
+          Verify report storage permissions,
+          access-group configuration and filename settings.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# Optional Access Group Validation
+# =============================================================================
+
+- name: "Report Storage | Validate configured access group"
+  when:
+
+    - >-
+      report_storage_access_group
+      | default('')
+      | string
+      | trim
+      | length > 0
+
+  block:
+
+    - name: "Report Storage | Query configured operating-system group"
+      ansible.builtin.getent:
+        database: group
+        key: "{{ report_storage_access_group }}"
+
+
+  rescue:
+
+    - name: "Report Storage | Stop when access group is unavailable"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.access }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "infrastructure"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.access_group_invalid }}
+
+        common_logging_error_message: >-
+          Configured report read-access group is unavailable
+          inside the Execution Environment.
+
+        common_logging_error_recommended_action: >-
+          Configure a valid operating-system group available
+          inside the Execution Environment or leave
+          report_storage_access_group empty.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# Validate /tmp
+# =============================================================================
+
+- name: "Report Storage | Validate temporary filesystem"
+  block:
+
+    - name: "Report Storage | Inspect temporary storage root"
+      ansible.builtin.stat:
+        path: "{{ report_storage_root }}"
+      register: report_storage_root_stat
+
+
+    - name: "Report Storage | Confirm temporary storage is available"
+      ansible.builtin.assert:
+        that:
+
+          - report_storage_root_stat.stat.exists
+
+          - report_storage_root_stat.stat.isdir
+
+        fail_msg: >-
+          Temporary report storage is unavailable
+          inside the Execution Environment.
+
+        quiet: true
+
+
+  rescue:
+
+    - name: "Report Storage | Stop when temporary storage is unavailable"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.access }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "infrastructure"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.storage_unavailable }}
+
+        common_logging_error_message: >-
+          Temporary report storage is unavailable.
+
+        common_logging_error_recommended_action: >-
+          Verify that /tmp exists and is accessible
+          inside the AAP Execution Environment.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# Verification Probe
+#
+# Unique hidden probe:
+#
+#   /tmp/.akamai_report_probe_<execution_id>_<timestamp>.tmp
+# =============================================================================
+
+- name: "Report Storage | Resolve verification probe"
+  ansible.builtin.set_fact:
+
+    report_storage_probe_filename: >-
+      {{
+        report_storage_probe_prefix
+      }}_{{
+        report_storage_log_execution_id
+        | regex_replace(
+            '[^A-Za-z0-9._-]',
+            '_'
+          )
+      }}_{{
+        report_storage_runtime_timestamp
+      }}.tmp
+
+    report_storage_probe_content: >-
+      REPORT_STORAGE_VERIFY_{{
+        report_storage_log_execution_id
+        | regex_replace(
+            '[^A-Za-z0-9._-]',
+            '_'
+          )
+      }}
+
+    report_storage_probe_path: >-
+      {{
+        report_storage_root
+      }}/{{
+        report_storage_probe_prefix
+      }}_{{
+        report_storage_log_execution_id
+        | regex_replace(
+            '[^A-Za-z0-9._-]',
+            '_'
+          )
+      }}_{{
+        report_storage_runtime_timestamp
+      }}.tmp
+
+
+# =============================================================================
+# Check Mode / Dry Run
+#
+# No probe file is written in Check Mode.
+# =============================================================================
+
+- name: "Report Storage | Perform check-mode validation"
+  when:
+    - ansible_check_mode
+  block:
+
+    - name: "Report Storage | Validate sample report filename"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            (
+              report_storage_runtime_timestamp
+              ~
+              '_1_success.txt'
+            )
+            is match(
+              report_storage_filename_regex
+            )
+
+        fail_msg: >-
+          Report naming validation failed during Check Mode.
+
+        quiet: true
+
+
+    - name: "Report Storage | Display check-mode plan"
+      ansible.builtin.debug:
+        msg:
+
+          storage_root: "{{ report_storage_root }}"
+
+          file_mode: >-
+            {{ report_storage_effective_file_mode }}
+
+          access_group: >-
+            {{
+              report_storage_access_group
+              if
+              (
+                report_storage_access_group
+                | default('')
+                | string
+                | trim
+                | length > 0
+              )
+              else
+              'execution-user-only'
+            }}
+
+          filename_format: >-
+            {{ report_storage_filename_format }}
+
+          example_filename: >-
+            {{ report_storage_runtime_timestamp }}_1_success.txt
+
+          persistent_storage: false
+
+          retention_enabled: false
+
+          filesystem_changes: false
+
+
+    - name: "Report Storage | Log successful check-mode validation"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: log_event
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_stage: >-
+          {{ report_storage_log_stages.dry_run }}
+
+        common_logging_result: "success"
+
+        common_logging_message: >-
+          Temporary report storage passed Check Mode validation.
+
+        common_logging_version_info: {}
+
+
+  rescue:
+
+    - name: "Report Storage | Stop on check-mode validation failure"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.dry_run }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "validation"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.dry_run_failed }}
+
+        common_logging_error_message: >-
+          Temporary report storage Check Mode
+          validation failed.
+
+        common_logging_error_recommended_action: >-
+          Verify /tmp availability and report-storage
+          configuration.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# WRITE Verification
+# =============================================================================
+
+- name: "Report Storage | Verify write capability"
+  when:
+
+    - not ansible_check_mode
+
+    - report_storage_verify_io | bool
+
+  block:
+
+    - name: "Report Storage | Write verification artifact"
+      ansible.builtin.copy:
+
+        dest: "{{ report_storage_probe_path }}"
+
+        content: |
+          {{ report_storage_probe_content }}
+
+        group: >-
+          {{
+            report_storage_access_group
+            if
+            (
+              report_storage_access_group
+              | default('')
+              | string
+              | trim
+              | length > 0
+            )
+            else
+            omit
+          }}
+
+        mode: "{{ report_storage_effective_file_mode }}"
+
+
+    - name: "Report Storage | Inspect verification artifact"
+      ansible.builtin.stat:
+        path: "{{ report_storage_probe_path }}"
+      register: report_storage_probe_stat
+
+
+    - name: "Report Storage | Validate verification permissions"
+      ansible.builtin.assert:
+        that:
+
+          - report_storage_probe_stat.stat.exists
+
+          - report_storage_probe_stat.stat.isreg
+
+          - >-
+            report_storage_probe_stat.stat.mode
+            ==
+            report_storage_effective_file_mode
+
+          - >-
+            (
+              report_storage_access_group
+              | default('')
+              | string
+              | trim
+              | length == 0
+            )
+            or
+            (
+              report_storage_probe_stat.stat.gr_name
+              ==
+              report_storage_access_group
+            )
+
+        fail_msg: >-
+          Verification artifact was not created with
+          the expected permissions or group ownership.
+
+        quiet: true
+
+
+  rescue:
+
+    - name: "Report Storage | Remove incomplete verification artifact"
+      ansible.builtin.file:
+        path: "{{ report_storage_probe_path }}"
+        state: absent
+      failed_when: false
+
+
+    - name: "Report Storage | Stop on write verification failure"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.write }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "infrastructure"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.write_failed }}
+
+        common_logging_error_message: >-
+          Automation could not write the temporary
+          report verification artifact under /tmp.
+
+        common_logging_error_recommended_action: >-
+          Verify /tmp write access for the
+          Execution Environment user.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# READ Verification
+# =============================================================================
+
+- name: "Report Storage | Verify read capability"
+  when:
+
+    - not ansible_check_mode
+
+    - report_storage_verify_io | bool
+
+  block:
+
+    - name: "Report Storage | Read verification artifact"
+      ansible.builtin.slurp:
+        src: "{{ report_storage_probe_path }}"
+      register: report_storage_probe_read
+
+
+    - name: "Report Storage | Validate verification content"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            (
+              report_storage_probe_read.content
+              | b64decode
+              | trim
+            )
+            ==
+            report_storage_probe_content
+
+        fail_msg: >-
+          Data read from temporary storage does not
+          match the verification content written earlier.
+
+        quiet: true
+
+
+  rescue:
+
+    - name: "Report Storage | Remove verification artifact after read failure"
+      ansible.builtin.file:
+        path: "{{ report_storage_probe_path }}"
+        state: absent
+      failed_when: false
+
+
+    - name: "Report Storage | Stop on read verification failure"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.read }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "infrastructure"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.read_failed }}
+
+        common_logging_error_message: >-
+          Automation could not read the temporary
+          report verification artifact from /tmp.
+
+        common_logging_error_recommended_action: >-
+          Verify /tmp read permissions for the
+          Execution Environment user.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# LIST Verification
+#
+# IMPORTANT:
+#
+# Probe filename begins with ".".
+#
+# ansible.builtin.find ignores hidden files by default,
+# therefore hidden: true is REQUIRED.
+# =============================================================================
+
+- name: "Report Storage | Verify list capability"
+  when:
+
+    - not ansible_check_mode
+
+    - report_storage_verify_io | bool
+
+  block:
+
+    - name: "Report Storage | Locate verification artifact"
+      ansible.builtin.find:
+
+        paths: "{{ report_storage_root }}"
+
+        patterns:
+          - "{{ report_storage_probe_filename }}"
+
+        file_type: file
+
+        recurse: false
+
+        hidden: true
+
+      register: report_storage_probe_list
+
+
+    - name: "Report Storage | Validate list result"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            report_storage_probe_list.matched
+            | int
+            ==
+            1
+
+        fail_msg: >-
+          Automation could not locate the verification
+          artifact written under /tmp.
+
+        quiet: true
+
+
+  rescue:
+
+    - name: "Report Storage | Remove verification artifact after list failure"
+      ansible.builtin.file:
+        path: "{{ report_storage_probe_path }}"
+        state: absent
+      failed_when: false
+
+
+    - name: "Report Storage | Stop on list verification failure"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.list }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "infrastructure"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.list_failed }}
+
+        common_logging_error_message: >-
+          Automation could not list the temporary
+          report artifact under /tmp.
+
+        common_logging_error_recommended_action: >-
+          Verify /tmp access permissions inside
+          the Execution Environment.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# Probe Cleanup
+# =============================================================================
+
+- name: "Report Storage | Remove verification artifact"
+  ansible.builtin.file:
+    path: "{{ report_storage_probe_path }}"
+    state: absent
+  when:
+
+    - not ansible_check_mode
+
+    - report_storage_verify_io | bool
+
+
+# =============================================================================
+# Report Naming
+#
+# Version and status are optional for storage-only testing.
+#
+# Filename generation occurs only when BOTH are supplied.
+# =============================================================================
+
+- name: "Report Storage | Resolve final report path"
+  when:
+
+    - >-
+      report_storage_version
+      | default('')
+      | string
+      | trim
+      | length > 0
+
+    - >-
+      report_storage_status
+      | default('')
+      | string
+      | trim
+      | length > 0
+
+  block:
+
+    - name: "Report Storage | Normalize report status"
+      ansible.builtin.set_fact:
+        report_storage_normalized_status: >-
+          {{
+            report_storage_status
+            | string
+            | trim
+            | lower
+            | regex_replace(
+                '[^a-z0-9_-]',
+                '_'
+              )
+          }}
+
+
+    - name: "Report Storage | Validate filename inputs"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            (
+              report_storage_version
+              | string
+              | trim
+            )
+            is match(
+              report_storage_version_regex
+            )
+
+          - >-
+            report_storage_normalized_status
+            is match(
+              report_storage_status_regex
+            )
+
+        fail_msg: >-
+          Report version must be numeric and report status
+          must resolve to a safe lowercase filename value.
+
+        quiet: true
+
+
+    - name: "Report Storage | Build final report filename"
+      ansible.builtin.set_fact:
+
+        report_storage_report_filename: >-
+          {{
+            report_storage_runtime_timestamp
+          }}_{{
+            report_storage_version
+            | string
+            | trim
+          }}_{{
+            report_storage_normalized_status
+          }}.txt
+
+        report_storage_report_path: >-
+          {{
+            report_storage_root
+          }}/{{
+            report_storage_runtime_timestamp
+          }}_{{
+            report_storage_version
+            | string
+            | trim
+          }}_{{
+            report_storage_normalized_status
+          }}.txt
+
+
+    - name: "Report Storage | Validate generated filename"
+      ansible.builtin.assert:
+        that:
+
+          - >-
+            report_storage_report_filename
+            is match(
+              report_storage_filename_regex
+            )
+
+        fail_msg: >-
+          Generated report filename does not satisfy
+          the required timestamp_version_status.txt convention.
+
+        quiet: true
+
+
+  rescue:
+
+    - name: "Report Storage | Stop on report naming failure"
+      ansible.builtin.include_role:
+        name: common_logging
+        tasks_from: fail_with_error
+      vars:
+
+        common_logging_request_id: >-
+          {{ report_storage_log_request_id }}
+
+        common_logging_execution_id: >-
+          {{ report_storage_log_execution_id }}
+
+        common_logging_environment: >-
+          {{ report_storage_log_environment }}
+
+        common_logging_triggered_by: >-
+          {{ report_storage_log_triggered_by }}
+
+        common_logging_error_stage: >-
+          {{ report_storage_log_stages.naming }}
+
+        common_logging_error_actor: >-
+          {{ report_storage_log_actor }}
+
+        common_logging_error_category_input: "validation"
+
+        common_logging_error_key_input: >-
+          {{ report_storage_error_keys.naming_invalid }}
+
+        common_logging_error_message: >-
+          Report filename generation failed.
+
+        common_logging_error_recommended_action: >-
+          Supply a numeric Akamai version
+          and a valid report status.
+
+        common_logging_error_version_info: {}
+
+
+# =============================================================================
+# Publish Temporary Storage Metadata to AAP
+#
+# Downstream tasks can consume:
+#
+#   report_storage.report_path
+# =============================================================================
+
+- name: "Report Storage | Publish temporary report storage metadata"
+  ansible.builtin.set_stats:
+    data:
+
+      report_storage:
+
+        root: "{{ report_storage_root }}"
+
+        filename_format: >-
+          {{ report_storage_filename_format }}
+
+        report_filename: >-
+          {{
+            report_storage_report_filename
+            | default('')
+          }}
+
+        report_path: >-
+          {{
+            report_storage_report_path
+            | default('')
+          }}
+
+        file_mode: >-
+          {{ report_storage_effective_file_mode }}
+
+        ephemeral: true
+
+        dry_run: >-
+          {{ ansible_check_mode | bool }}
+
+    per_host: false
+
+
+# =============================================================================
+# Final Success Event
+# =============================================================================
+
+- name: "Report Storage | Log successful storage validation"
+  ansible.builtin.include_role:
+    name: common_logging
+    tasks_from: log_event
+  vars:
+
+    common_logging_request_id: >-
+      {{ report_storage_log_request_id }}
+
+    common_logging_execution_id: >-
+      {{ report_storage_log_execution_id }}
+
+    common_logging_environment: >-
+      {{ report_storage_log_environment }}
+
+    common_logging_triggered_by: >-
+      {{ report_storage_log_triggered_by }}
+
+    common_logging_actor: >-
+      {{ report_storage_log_actor }}
+
+    common_logging_stage: >-
+      {{ report_storage_log_stages.access }}
+
+    common_logging_result: "success"
+
+    common_logging_message: >-
+      Temporary report storage under /tmp passed
+      accessibility and naming validation.
+
+    common_logging_version_info: {}
+
+  when:
+    - not ansible_check_mode
