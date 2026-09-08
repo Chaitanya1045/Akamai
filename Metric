@@ -1,0 +1,19 @@
+Reviewed the SOP and architecture for MET-37883481 WAF Coverage Metric Automation.
+
+Confirmed AAP as the execution platform with daily scheduled execution.
+
+Understood the metric grain as VIP and approved eligibility rules including 161.150.0.0/16 and 60-day UTC grace period.
+
+Identified Mosaic, Akamai PAPI, Akamai AppSec, SiteShield, and Splunk as key integration points.
+
+Confirmed separate F5 and Akamai compliance evaluation paths.
+
+Captured required outputs: Splunk dataset, metric summary, and audit manifest.
+
+Identified key blockers around FutureCoverage logic, business overrides, web-VIP criteria, and SiteShield origin matching.
+
+API endpoints, authentication details, and sample payloads are required from source-system teams.
+
+Splunk publication method and UAT source-of-truth need confirmation.
+
+Initial development can proceed with mocks, validation framework, eligibility logic, and metric calculation while pending the above clarifications.
