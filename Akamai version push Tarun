@@ -1,0 +1,61 @@
+Worked for 1m 44s
+
+The page is well structured and mostly correct, especially the flow from Overview → Scope → Problem → Business Value → Time Savings → Stakeholders → Success Metrics → Risks. I would not rewrite it completely. I would make a few targeted changes before treating it as final.
+
+The biggest concern is scope wording. If this page represents the MET-37883481 WAF Coverage automation we discussed, calling everything only “Akamai coverage metrics” is slightly misleading because the overall metric logic includes broader WAF coverage evaluation, including F5/Akamai decision paths and supporting Mosaic/SiteShield data. In that case, I would rename the page to something like “WAF Coverage Automation: Scope, Value and Success Metrics” or at least say “WAF/Akamai coverage metrics” in the Overview and Scope. If this is intentionally an Akamai-only epic, then the current title is fine.
+
+I would make these specific improvements:
+
+1. Overview/Scope: add that the automation runs through AAP on a daily schedule and produces a validated coverage metric rather than just “coverage outputs.” That connects the business page to the actual solution architecture.
+
+
+2. Time Savings: the math is correct — 8 hours/month × 12 = 96 hours/year — but make sure the 8 hours/month has an agreed source or owner sign-off. Otherwise reviewers may challenge it. If it is only an estimate, say:
+
+> “Estimated ~8 engineering hours saved per month, subject to validation after implementation.”
+
+
+
+
+3. Manual Effort Reduction: I would change “eliminates most recurring manual activities” to “significantly reduces recurring manual activities” unless you have evidence that nearly all manual steps disappear. It is safer and easier to defend.
+
+
+4. Success Metrics: this is the area I would strengthen most. Your current points are good but some are vague. For this automation, the success measures should reflect the actual technical outcome:
+
+96 engineering hours recovered annually (if approved baseline)
+
+Successful scheduled daily metric execution
+
+Validated numerator, denominator and final coverage percentage
+
+Reduction in manual reconciliation/data-quality corrections
+
+Improved source-data freshness and accuracy
+
+Successful reconciliation with Splunk during UAT
+
+Faster identification of uncovered/non-compliant VIPs
+
+
+I would avoid putting percentages such as “99% successful runs” unless the business has approved that target.
+
+
+5. Dependencies and Risks: the current paragraph is correct but too generic for this project. I recommend replacing it with something closer to:
+
+> Dependencies and Risks
+Successful automation depends on the availability and quality of authoritative source data, continued availability of required APIs, stable upstream schemas, approved business-rule/override logic, AAP execution availability, and reliable downstream publication. Key risks include unavailable SiteShield data, Akamai/API schema changes, stale source data, changes to business override rules, and mismatches between calculated results and downstream Splunk reporting. These conditions should fail safely or be surfaced for investigation rather than producing an unverified metric.
+
+
+
+That aligns much more closely with the actual architecture and known risks.
+
+
+
+There are also a couple of smaller editorial fixes. In the Overview I can see what appears to be “remediationWorkflows” without a space; change it to “remediation workflows.” I would also change “executive reporting and downstream remediation workflows” to “executive reporting, operational monitoring, and downstream remediation workflows” only if operational monitoring is actually part of the agreed use case.
+
+The Cost Impact section is good as written. Saying there is no direct budget reduction and that the value comes from recovered engineering capacity is credible and avoids overstating savings.
+
+The Stakeholders section is also reasonable. I would consider adding the metric/business owner and downstream Splunk/reporting consumers explicitly if those roles are confirmed, because Splunk publication/reconciliation is part of the agreed automation flow.
+
+So overall, I would rate the current page as good and usable, but not quite final. The main things to fix are Akamai-vs-WAF scope wording, measurable success criteria, evidence behind the 96-hour benefit, and making the Dependencies/Risks section specific to the actual automation rather than generic.
+
+If you want, I can next give you the complete corrected Confluence content section-by-section, ready to copy and paste, while preserving almost all of the current wording.
