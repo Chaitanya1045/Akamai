@@ -1,0 +1,24 @@
+Yes. Keep it simple for your Scrum Master. I would highlight only these modifications:
+
+Section	Modification Required
+
+Title	Change from Akamai Coverage Automation to Akamai Version Push Automation
+Overview	Replace coverage-metric wording with automated Akamai property version promotion/deployment through AAP
+Scope	Mention input validation, ServiceNow CHG validation, approvals, version comparison, deployment, health checks, reporting, CTASK update, rollback readiness
+Problem Statement	Replace dataset/reconciliation problem with manual deployment, validation, approval, monitoring, and audit effort
+Pain Points	Remove large datasets / data-quality / stale coverage data. Add manual CHG validation, version selection, approvals, deployment monitoring, audit evidence, CTASK update
+Business Value	Focus on safer, standardized, auditable and repeatable Akamai deployments
+Time Savings	Remove 8 hours/month / 96 hours annually unless this is officially approved for Version Push
+Manual Effort Reduction	Mention reduction in validation, deployment execution, monitoring, reporting and CTASK update effort
+Efficiency Improvements	Focus on faster deployment execution, fewer manual handoffs and quicker failure identification
+Cost Impact	Current generic wording is fine; keep focus on engineering capacity and reduced operational effort
+User/Business Benefits	Replace coverage-data benefits with faster deployments, better governance, traceability, reduced errors and rollback readiness
+Stakeholders	Include Boundary Protection/Akamai team, Application teams, Change Management, AAP team, approvers/peer reviewers
+Success Metrics	Remove daily metric delivery, uncovered VIPs, data freshness. Add successful validations, Implement AND Approved enforcement, deployment success, health checks, audit logs, CTASK updates
+Dependencies/Risks	Replace source-data risks with AAP availability, Akamai API, ServiceNow API, credentials, network, activation timeout, API/schema changes
+Summary	Rewrite to describe end-to-end controlled Akamai version promotion, not coverage metric automation
+
+
+The main message to your Scrum Master can simply be:
+
+> The current page is written more for Akamai Coverage Automation. For Akamai Version Push, we need to replace coverage/metric/data-reconciliation references with deployment-focused content around CHG validation, approvals, Akamai version promotion, monitoring, audit, CTASK updates and rollback readiness.
