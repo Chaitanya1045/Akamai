@@ -1,0 +1,39 @@
+Yes. If you want to sound like you’ve actually thought about the production behavior—not just API connectivity—ask questions around **data consistency, failure handling, auditability, and business-rule ownership**.
+
+* **“Do we need all source systems to represent the same point-in-time snapshot?”**
+  Mosaic, AppSec, PAPI and SiteShield may return data updated at different times. Ask whether we should enforce a freshness window so we don’t calculate today’s KPI using today’s Mosaic data and yesterday’s SiteShield data.
+
+* **“If one source succeeds and another fails after processing has already started, should we discard the entire run or retain it as a failed/audit-only run?”**
+  This forces a decision on partial failures and prevents accidental publication of incomplete metrics.
+
+* **“What is the authoritative source if two systems disagree about the same VIP or hostname?”**
+  Example: Mosaic says a hostname belongs to a VIP, but Akamai mapping says otherwise. Ask for an explicit source-of-truth precedence order.
+
+* **“Should the calculation be reproducible later using the exact same source snapshot?”**
+  If someone challenges a metric three months later, do we need raw/source snapshots or hashes—not just the final percentage? This is a strong audit question.
+
+* **“If the business override changes today, should it affect only future runs or should historical calculations be recalculated?”**
+  This clarifies whether overrides are effective-dated and whether backfills are required.
+
+* **“How should we handle a VIP that changes FutureCoverage from F5 to Akamai during the 60-day lifecycle?”**
+  Does the grace period restart, continue from original VIP creation date, or use the protection-migration date? This is a subtle gap worth clarifying.
+
+* **“For hostname coverage, what is the exact matching rule for aliases, wildcards, case differences, trailing dots and ports?”**
+  Example: does `*.example.com` cover `api.example.com`? This can materially change `MissingNames`.
+
+* **“What should happen if the automation calculates the metric successfully but Splunk publication fails?”**
+  Should we rerun only publication using the same RunID/result, or recalculate everything? This leads into idempotency and recovery design.
+
+* **“Should the same reporting date be allowed to publish twice, or do we need duplicate-run protection?”**
+  AAP retries/manual reruns could otherwise create duplicate Splunk records or conflicting KPI values.
+
+* **“What exact evidence should make us mark the metric ‘Unavailable’ instead of ‘Non-Compliant’?”**
+  A genuine security failure and missing/untrustworthy source data are different. For example, `OriginRuleCoverage = FALSE` should not mean the same thing as “SiteShield API did not respond.”
+
+The **best three** to raise first are the point-in-time consistency question, source-of-truth precedence question, and **Unavailable vs Non-Compliant** question. Those show you’re thinking about whether the metric is actually trustworthy, not merely whether the Ansible job returns `SUCCESS`.
+
+One particularly strong way to phrase the last one on the call is:
+
+> “I want to make sure we don’t convert a data-quality failure into a security-compliance failure. Can we define when a VIP should be Non-Compliant versus when the entire metric should be marked Unavailable?”
+
+That is a genuinely important design question for this automation.
